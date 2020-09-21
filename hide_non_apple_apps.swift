@@ -43,7 +43,8 @@ let exluded = Set([
 	"Safari.app",
 	"Xcode.app",
 	"iBooks Author.app",
-	"iMovie.app"
+	"iMovie.app",
+	"Playgrounds.app"
 ])
 let outputFileName = "output.out"
 
