@@ -2,7 +2,7 @@
 /*
  Programme: hide_non_apple_apps.swift
    Purpose: A Swift shell script to hide all applications from Finder's view which are not originated from Apple and not included in the standard installation of macOS.
-   Version: 2.0 (12-06-2020)
+   Version: 3.0 (01-12-2021)
     Author: Mattias M. Schneider
  Copyright: IDC (I don't care)
  */
@@ -44,12 +44,16 @@ let exluded = Set([
 	"Xcode.app",
 	"iBooks Author.app",
 	"iMovie.app",
-	"Playgrounds.app"
+	"Playgrounds.app",
+	"Reality Converter.app"
 ])
 let outputFileName = "output.out"
 
-// … Yes, we need to run this script with the `sudo` command, otherwise the `chflags` command will not operate on most of the files due to access restrictions.
-print("\(Colour.blue)\(Colour.bold) Remember to run this command as superuser. \(Colour.reset)")
+// Yes, we need to run this script with the `sudo` command, otherwise the `chflags` command will not operate on most of the files due to access restrictions.
+guard isSudo() else {
+    print("\(Colour.blue) Remember to run this script as superuser with the \(Colour.bold)\(Colour.green) sudo \(Colour.reset)\(Colour.blue) command. \(Colour.reset)")
+    exit(-1)
+}
 
 // Read the contents of the Applications directory, create a `Set` of it and remove the `excluded` items.
 let files = try! FileManager.default.contentsOfDirectory(atPath: appsPath)
@@ -96,14 +100,53 @@ for hiddenFile in hiddenFiles.sorted() {
 		print("\(Colour.red) NOK \(Colour.reset)")
 	}
 }
+print()
 
 // Synchronise the file's state and close it.
 try! outputFile.synchronize()
 try! outputFile.close()
 
-// If the file's size is not zero then we have some output and report it to the user for further inspection. Otherwise we can safely remove it.
+// If the file's size is not zero then we have some output and report it to the user for further inspection. Otherwise we can safely remove it and ask the user if the Dock should be restarted.
 if try! FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as! Int != 0 {
-    print("\n\(Colour.red)\(Colour.bold) See \(fileURL.path) for report. \n Did you run the command as superuser? \(Colour.reset)")
+    print("\n\(Colour.red)\(Colour.bold) See \(fileURL.path) for report. \(Colour.reset)")
 } else {
     try! FileManager.default.removeItem(at: fileURL)
+    restartDock()
+}
+
+/*
+ Check, if the process is executed with elevated privileges using the `id` command.
+ */
+func isSudo() -> Bool {
+	let task = Process()
+    let pipe = Pipe()
+    
+	task.executableURL = URL(fileURLWithPath: "/usr/bin/id")
+    task.standardOutput = pipe
+	try! task.run()
+	task.waitUntilExit()
+    
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    guard let output = String(data: data, encoding: .utf8) else {
+        print(" \(Colour.red)There was an error evaluating the privileges. The output of the \(Colour.bold)id\(Colour.reset)\(Colour.red) command was empty. \(Colour.reset)")
+        return false
+    }
+    
+    return output.contains("uid=0(root)")
+}
+
+/*
+ Ask the user if the Dock should be restarted. We use `pkill` to have macOS spawn a new Dock process.
+ */
+func restartDock() {
+    print("Do you want to restart the Dock to reflect the hidden files? Type a \(Colour.bold)\(Colour.green) Y \(Colour.reset) or \(Colour.bold)\(Colour.green) y \(Colour.reset) for yes, any other input will be treated as \(Colour.bold)\(Colour.red) no \(Colour.reset).")
+    let restart = readLine(strippingNewline: true)
+    
+    if restart == "Y" || restart == "y" {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        task.arguments = ["Dock"]
+        try! task.run()
+        task.waitUntilExit()
+    }
 }
